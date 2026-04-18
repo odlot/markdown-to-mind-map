@@ -41,6 +41,37 @@ const expectations = {
       { kind: 'link', source: 'InformationD.md::__root__', target: 'InformationA.md::InformationA>SubheadingA of InformationA' },
     ],
   },
+  cycles: {
+    nodes: [
+      { id: 'alpha.md::__root__', label: 'Alpha', level: 1 },
+      { id: 'beta.md::__root__', label: 'Beta', level: 1 },
+      { id: 'x.md::__root__', label: 'X', level: 1 },
+      { id: 'y.md::__root__', label: 'Y', level: 1 },
+      { id: 'z.md::__root__', label: 'Z', level: 1 },
+      { id: 'self.md::__root__', label: 'Self', level: 1 },
+      { id: 'self.md::Self>Topic', label: 'Topic', level: 2 },
+      { id: 'within.md::__root__', label: 'Within', level: 1 },
+      { id: 'within.md::Within>Left', label: 'Left', level: 2 },
+      { id: 'within.md::Within>Right', label: 'Right', level: 2 },
+    ],
+    links: [
+      // containment
+      { kind: 'containment', source: 'self.md::__root__', target: 'self.md::Self>Topic' },
+      { kind: 'containment', source: 'within.md::__root__', target: 'within.md::Within>Left' },
+      { kind: 'containment', source: 'within.md::__root__', target: 'within.md::Within>Right' },
+      // two-file cycle: both edges must exist independently
+      { kind: 'link', source: 'alpha.md::__root__', target: 'beta.md::__root__' },
+      { kind: 'link', source: 'beta.md::__root__', target: 'alpha.md::__root__' },
+      // three-file cycle
+      { kind: 'link', source: 'x.md::__root__', target: 'y.md::__root__' },
+      { kind: 'link', source: 'y.md::__root__', target: 'z.md::__root__' },
+      { kind: 'link', source: 'z.md::__root__', target: 'x.md::__root__' },
+      // within-file cycle between two sub-headings
+      { kind: 'link', source: 'within.md::Within>Left', target: 'within.md::Within>Right' },
+      { kind: 'link', source: 'within.md::Within>Right', target: 'within.md::Within>Left' },
+      // self.md's self-targeting link must NOT appear — no entry here
+    ],
+  },
   'link-edges': {
     nodes: [
       { id: 'a.md::__root__', label: 'File A', level: 1 },
