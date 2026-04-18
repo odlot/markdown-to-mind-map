@@ -16,6 +16,14 @@ Tests load `extension.js` under a stubbed `vscode` module (`test/vscode-shim.js`
 2. Add a matching entry to the `expectations` map in `test/run.js` listing every expected node (`id`, `label`, `level`) and every expected link (`kind`, `source`, `target`).
 3. Extra nodes or links not in the expectation set are treated as failures — keep expectations exhaustive.
 
+## Commit messages
+
+Always use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>[optional scope]: <description>`, wrap body at ~72 chars, use `!` or a
+`BREAKING CHANGE:` footer for breaking changes. Prefer `feat`, `fix`, `docs`,
+`refactor`, `test`, `chore`. Describe user-visible behavior in the body, not
+the diff.
+
 ## Architecture notes
 
 Node IDs use the breadcrumb format `<relpath>::<H1>>.<H2>>.<H3>`, with `::__root__` for the file root. The root's label is the first `#` heading if present, else the filename. Links in `buildGraph`'s output carry `kind: 'containment' | 'link'` — the webview uses this to style edges (dashed vs solid) and tune force distances.
