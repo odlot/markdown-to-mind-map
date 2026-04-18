@@ -39,6 +39,10 @@
         labels: v('editor-foreground'),
         highlight: v('textLink-foreground'),
         dimmed: v('disabledForeground'),
+        outbound: v('textLink-foreground') || '#4a9eff',
+        // Inbound uses VS Code's "modified" accent (usually a warm/yellow hue),
+        // falling back to a distinct orange if the theme doesn't define it.
+        inbound: v('gitDecoration-modifiedResourceForeground') || v('charts-orange') || '#e0a23a',
       };
     }
     let C = readColors();
@@ -113,7 +117,23 @@
       .force("x", d3.forceX().strength(0.03))
       .force("y", d3.forceY().strength(0.03));
 
-    // Containment edges are dashed and lighter; link edges are solid.
+    // Arrow marker for solid (link) edges. `fill="context-stroke"` makes the
+    // arrowhead inherit each line's current stroke color, so hover recoloring
+    // flows through automatically.
+    const defs = svg.append("defs");
+    defs.append("marker")
+      .attr("id", "arrow")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 9)
+      .attr("refY", 0)
+      .attr("markerWidth", 7)
+      .attr("markerHeight", 7)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-4L10,0L0,4")
+      .attr("fill", "context-stroke");
+
+    // Containment edges are dashed and lighter; link edges are solid with an arrow.
     const link = g.append("g")
       .attr("stroke", C.links)
       .attr("stroke-opacity", 1)
@@ -122,7 +142,8 @@
       .join("line")
       .attr("stroke-width", l => l.kind === "containment" ? 1 : 1.5)
       .attr("stroke-dasharray", l => l.kind === "containment" ? "3,3" : null)
-      .attr("stroke-opacity", l => l.kind === "containment" ? 0.5 : 1);
+      .attr("stroke-opacity", l => l.kind === "containment" ? 0.5 : 1)
+      .attr("marker-end", l => l.kind === "link" ? "url(#arrow)" : null);
 
     const node = g.append("g")
       .selectAll("g")
@@ -168,11 +189,15 @@
         .attr("fill", n => connected.has(n.id) ? C.highlight : C.dimmed);
       node.select("text")
         .attr("fill", n => connected.has(n.id) ? C.highlight : C.dimmed);
+      // Asymmetric link coloring: outbound from hovered = outbound hue,
+      // inbound to hovered = inbound hue, unrelated = dimmed.
       link
         .attr("stroke", l => {
           const sid = typeof l.source === "object" ? l.source.id : l.source;
           const tid = typeof l.target === "object" ? l.target.id : l.target;
-          return (sid === d.id || tid === d.id) ? C.highlight : C.dimmed;
+          if (sid === d.id) return C.outbound;
+          if (tid === d.id) return C.inbound;
+          return C.dimmed;
         });
     }).on("mouseleave", () => {
       forcedIds = new Set();
@@ -195,12 +220,27 @@
       .on("end", dragended));
 
     // Set the position attributes of links and nodes each time the simulation ticks.
+    // For link-kind edges, retract the target endpoint to the target node's
+    // circle edge so the arrowhead sits just outside the circle.
+    const ARROW_GAP = 3;
     simulation.on("tick", () => {
       link
         .attr("x1", d => d.source.x)
         .attr("y1", d => d.source.y)
-        .attr("x2", d => d.target.x)
-        .attr("y2", d => d.target.y);
+        .attr("x2", d => {
+          if (d.kind !== "link") return d.target.x;
+          const dx = d.target.x - d.source.x;
+          const dy = d.target.y - d.source.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          return d.target.x - (dx / dist) * (radiusFor(d.target.level) + ARROW_GAP);
+        })
+        .attr("y2", d => {
+          if (d.kind !== "link") return d.target.y;
+          const dx = d.target.x - d.source.x;
+          const dy = d.target.y - d.source.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          return d.target.y - (dy / dist) * (radiusFor(d.target.level) + ARROW_GAP);
+        });
 
       node
         .attr("transform", d => `translate(${d.x},${d.y})`);
