@@ -1,0 +1,38 @@
+{
+  "name": "markdown-to-mindmap",
+  "displayName": "Markdown to mind map",
+  "description": "Convert a Markdown document into a mind map by transforming links into graph edges and documents into nodes.",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.100.0" },
+  "categories": ["Visualization"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/odlot/markdown-to-mind-map"
+  },
+  "files": [
+    "extension.js",
+    "webview.html",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node test/run.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdown-to-mindmap.open",
+        "title": "Markdown to mind map: Open Graph"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "markdown-to-mindmap.open",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m"
+      }
+    ]
+  }
+}

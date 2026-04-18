@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown to mind map</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--vscode-editor-background);
+      font-family: var(--vscode-font-family, sans-serif);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+  </style>
+</head>
+
+<body>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script>
+    const graph = /*GRAPH_DATA*/null;
+
+    function readColors() {
+      const s = getComputedStyle(document.documentElement);
+      const v = k => s.getPropertyValue('--vscode-' + k).trim();
+      return {
+        bg: v('editor-background'),
+        nodeStroke: v('editor-foreground'),
+        links: v('editor-foreground'),
+        labels: v('editor-foreground'),
+        highlight: v('textLink-foreground'),
+        dimmed: v('disabledForeground'),
+      };
+    }
+    let C = readColors();
+
+    // Per-level visual scales. Lower level numbers = higher in the hierarchy.
+    const radiusFor = lvl => ({ 1: 9, 2: 6, 3: 4 }[lvl] ?? 4);
+    const fillOpacityFor = lvl => ({ 1: 1.0, 2: 0.55, 3: 0.2 }[lvl] ?? 0.2);
+    const fontSizeFor = lvl => ({ 1: 12, 2: 10, 3: 8 }[lvl] ?? 8);
+    const labelDyFor = lvl => radiusFor(lvl) + 10;
+
+    // Re-read colors when VS Code changes the theme.
+    new MutationObserver(() => {
+      C = readColors();
+      // Repaint everything to the default (unhovered) state with new colors.
+      node.select("circle")
+        .attr("stroke", C.nodeStroke)
+        .attr("fill", C.nodeStroke);
+      node.select("text").attr("fill", C.labels);
+      link.attr("stroke", C.links);
+      link.attr("stroke-opacity", 1);
+    }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    // The visualization should have the same width as the window panel provided by VS Code
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    // Create the SVG container.
+    const svg = d3.create("svg")
+      .attr("width", width)
+      .attr("height", height);
+
+    // Zoom behavior — start centered on origin where forces push nodes.
+    // Track current scale to drive progressive label disclosure.
+    let currentScale = 1;
+    const g = svg.append("g");
+    const zoom = d3.zoom()
+      .scaleExtent([0.1, 8])
+      .on("zoom", e => {
+        g.attr("transform", e.transform);
+        currentScale = e.transform.k;
+        updateLabelVisibility();
+      });
+    svg.call(zoom);
+
+    // Zoom thresholds at which labels of each level become visible.
+    // H1 is always visible; H2 appears when zoomed in a bit; H3 only when zoomed in further.
+    const labelZoomThreshold = lvl => ({ 1: 0, 2: 1.4, 3: 2.2 }[lvl] ?? 0);
+    let forcedIds = new Set();
+    function updateLabelVisibility() {
+      if (!node) return;
+      node.select("text").attr("display", n =>
+        (currentScale >= labelZoomThreshold(n.level) || forcedIds.has(n.id)) ? null : "none"
+      );
+    }
+
+    // The force simulation mutates links and nodes, so create a copy
+    // so that re-evaluating this cell produces the same result.
+    const links = graph.links.map(d => ({ ...d }));
+    const nodes = graph.nodes.map(d => ({ ...d }));
+
+    // Create a simulation with several forces. Containment edges pull tighter than
+    // free links so sub-headings cluster around their parent file/heading.
+    // Stronger repulsion + a collision force keep nodes from overlapping.
+    const simulation = d3.forceSimulation(nodes)
+      .alphaDecay(0.05)
+      .force("link", d3.forceLink(links)
+        .id(d => d.id)
+        .distance(l => l.kind === "containment" ? 40 : 110)
+        .strength(l => l.kind === "containment" ? 1.0 : 0.25))
+      .force("charge", d3.forceManyBody().strength(-320))
+      .force("collide", d3.forceCollide().radius(d => radiusFor(d.level) + 8).iterations(2))
+      .force("x", d3.forceX().strength(0.03))
+      .force("y", d3.forceY().strength(0.03));
+
+    // Containment edges are dashed and lighter; link edges are solid.
+    const link = g.append("g")
+      .attr("stroke", C.links)
+      .attr("stroke-opacity", 1)
+      .selectAll("line")
+      .data(links)
+      .join("line")
+      .attr("stroke-width", l => l.kind === "containment" ? 1 : 1.5)
+      .attr("stroke-dasharray", l => l.kind === "containment" ? "3,3" : null)
+      .attr("stroke-opacity", l => l.kind === "containment" ? 0.5 : 1);
+
+    const node = g.append("g")
+      .selectAll("g")
+      .data(nodes)
+      .join("g");
+
+    node.append("circle")
+      .attr("r", d => radiusFor(d.level))
+      .attr("fill", C.nodeStroke)
+      .attr("fill-opacity", d => fillOpacityFor(d.level))
+      .attr("stroke", C.nodeStroke)
+      .attr("stroke-width", 1.5);
+
+    node.append("text")
+      .text(d => d.label)
+      .attr("dy", d => labelDyFor(d.level))
+      .attr("text-anchor", "middle")
+      .attr("fill", C.labels)
+      .attr("font-size", d => fontSizeFor(d.level))
+      .attr("pointer-events", "none");
+
+    const vscode = acquireVsCodeApi();
+    node.on("click", (event, d) => {
+      vscode.postMessage({ command: "openFile", path: d.path, line: d.line ?? 0 });
+    });
+
+    // Show label and highlight connected nodes/links on hover. Hovering also
+    // forces the hovered label visible regardless of the current zoom level.
+    node.on("mouseenter", (event, d) => {
+      const connected = new Set([d.id]);
+      links.forEach(l => {
+        const sid = typeof l.source === "object" ? l.source.id : l.source;
+        const tid = typeof l.target === "object" ? l.target.id : l.target;
+        if (sid === d.id) connected.add(tid);
+        if (tid === d.id) connected.add(sid);
+      });
+
+      forcedIds = connected;
+      updateLabelVisibility();
+
+      node.select("circle")
+        .attr("stroke", n => connected.has(n.id) ? C.highlight : C.dimmed)
+        .attr("fill", n => connected.has(n.id) ? C.highlight : C.dimmed);
+      node.select("text")
+        .attr("fill", n => connected.has(n.id) ? C.highlight : C.dimmed);
+      link
+        .attr("stroke", l => {
+          const sid = typeof l.source === "object" ? l.source.id : l.source;
+          const tid = typeof l.target === "object" ? l.target.id : l.target;
+          return (sid === d.id || tid === d.id) ? C.highlight : C.dimmed;
+        });
+    }).on("mouseleave", () => {
+      forcedIds = new Set();
+      updateLabelVisibility();
+      node.select("circle")
+        .attr("stroke", C.nodeStroke)
+        .attr("fill", C.nodeStroke);
+      node.select("text").attr("fill", C.labels);
+      link.attr("stroke", C.links);
+    });
+
+    // Now that node exists, apply initial pan and label visibility.
+    svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
+    updateLabelVisibility();
+
+    // Add a drag behavior.
+    node.call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended));
+
+    // Set the position attributes of links and nodes each time the simulation ticks.
+    simulation.on("tick", () => {
+      link
+        .attr("x1", d => d.source.x)
+        .attr("y1", d => d.source.y)
+        .attr("x2", d => d.target.x)
+        .attr("y2", d => d.target.y);
+
+      node
+        .attr("transform", d => `translate(${d.x},${d.y})`);
+    });
+
+    // Reheat the simulation when drag starts, and fix the subject position.
+    function dragstarted(event) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
+    }
+
+    // Update the subject (dragged node) position during drag.
+    function dragged(event) {
+      event.subject.fx = event.x;
+      event.subject.fy = event.y;
+    }
+
+    // Restore the target alpha so the simulation cools after dragging ends.
+    // Unfix the subject position now that it’s no longer being dragged.
+    function dragended(event) {
+      if (!event.active) simulation.alphaTarget(0);
+      event.subject.fx = null;
+      event.subject.fy = null;
+    }
+
+    // Gently fit the graph into view once the simulation settles.
+    function fitAll() {
+      if (nodes.length === 0) return;
+      const pad = 60;
+      const xs = nodes.map(n => n.x);
+      const ys = nodes.map(n => n.y);
+      const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
+      const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
+      const bw = maxX - minX, bh = maxY - minY;
+      const scale = Math.min(width / bw, height / bh, 3);
+      const tx = width / 2 - scale * (minX + maxX) / 2;
+      const ty = height / 2 - scale * (minY + maxY) / 2;
+      svg.transition().duration(600).ease(d3.easeCubicOut)
+        .call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    }
+
+    simulation.on("end", fitAll);
+
+    document.body.appendChild(svg.node());
+  </script>
+</body>
+
+</html>
