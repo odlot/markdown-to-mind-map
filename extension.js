@@ -102,8 +102,8 @@ async function buildGraph() {
     const wikiRe = /\[\[([^\]]+)\]\]/g;
     const mdLinkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
 
-    const resolveTarget = (targetFile, targetHeading) => {
-      const att = targetFile ? resolveAttachment(targetFile, info.fullPath, root, attachmentNodes) : null;
+    const resolveTarget = (targetFile, targetHeading, linkText) => {
+      const att = targetFile ? resolveAttachment(targetFile, linkText, info.fullPath, root, attachmentNodes) : null;
       if (att) return att;
       return resolveHeadingLink(targetFile, targetHeading, info.fullPath, fileMap, root, headingIndex, rel);
     };
@@ -116,18 +116,21 @@ async function buildGraph() {
       let m;
       wikiRe.lastIndex = 0;
       while ((m = wikiRe.exec(line)) !== null) {
-        const inner = m[1].split('|')[0].trim();
+        const pipe = m[1].split('|');
+        const inner = pipe[0].trim();
+        const alias = pipe.length > 1 ? pipe.slice(1).join('|').trim() : null;
         const [targetFile, targetHeading] = splitHash(inner);
-        const resolved = resolveTarget(targetFile, targetHeading);
+        const resolved = resolveTarget(targetFile, targetHeading, alias);
         if (resolved && resolved !== ownerId) links.push({ source: ownerId, target: resolved, kind: 'link' });
       }
 
       mdLinkRe.lastIndex = 0;
       while ((m = mdLinkRe.exec(line)) !== null) {
+        const linkText = m[1].trim();
         const href = m[2].trim();
         if (!href || href.startsWith('http') || href.startsWith('mailto')) continue;
         const [targetFile, targetHeading] = splitHash(href);
-        const resolved = resolveTarget(targetFile, targetHeading);
+        const resolved = resolveTarget(targetFile, targetHeading, linkText);
         if (resolved && resolved !== ownerId) links.push({ source: ownerId, target: resolved, kind: 'link' });
       }
     }
@@ -292,7 +295,7 @@ function parseFileNodes(content, rel, name, fullPath) {
 
 const ATTACHMENT_EXTS = new Set(['.pdf']);
 
-function resolveAttachment(targetFile, fromFile, root, attachmentNodes) {
+function resolveAttachment(targetFile, linkText, fromFile, root, attachmentNodes) {
   if (!targetFile) return null;
   const cleaned = targetFile.split('?')[0];
   const ext = path.extname(cleaned).toLowerCase();
@@ -303,9 +306,12 @@ function resolveAttachment(targetFile, fromFile, root, attachmentNodes) {
   if (!fs.existsSync(abs)) return null;
   const rel = path.relative(root, abs).replace(/\\/g, '/');
   if (!attachmentNodes.has(rel)) {
+    // First reference wins: link text (md-style text or wiki alias) if
+    // provided, otherwise the filename without extension.
+    const text = linkText && linkText.trim();
     attachmentNodes.set(rel, {
       id: rel,
-      label: path.basename(abs, ext),
+      label: text || path.basename(abs, ext),
       level: 1,
       kind: 'attachment',
       ext,

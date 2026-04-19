@@ -76,7 +76,7 @@ const expectations = {
     // webview). Multiple links to the same PDF dedup to a single edge.
     nodes: [
       { id: 'doc.md::__root__', label: 'Doc', level: 1 },
-      { id: 'sample.pdf', label: 'sample', level: 1, kind: 'attachment' },
+      { id: 'sample.pdf', label: 'sample pdf', level: 1, kind: 'attachment' },
     ],
     links: [
       { kind: 'link', source: 'doc.md::__root__', target: 'sample.pdf' },
