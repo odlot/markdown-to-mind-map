@@ -5,11 +5,14 @@
   "version": "0.1.0",
   "engines": { "vscode": "^1.100.0" },
   "categories": ["Visualization"],
+  "publisher": "odlot-marco-lutz",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/odlot/markdown-to-mind-map"
   },
   "files": [
+    "CHANGELOG.md",
     "extension.js",
     "webview.html",
     "package.json",
