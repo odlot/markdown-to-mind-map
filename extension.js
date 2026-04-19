@@ -30,6 +30,11 @@ async function openMindmap() {
     panel.onDidDispose(() => { panel = null; });
     panel.webview.onDidReceiveMessage(async msg => {
       if (msg.command === 'openFile') {
+        if (msg.kind === 'attachment') {
+          // Delegate to VS Code's default viewer (PDF viewer etc.).
+          await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(msg.path));
+          return;
+        }
         const doc = await vscode.workspace.openTextDocument(msg.path);
         const line = Number.isInteger(msg.line) ? Math.max(0, msg.line) : 0;
         const pos = new vscode.Position(line, 0);
@@ -86,12 +91,22 @@ async function buildGraph() {
     info.rootId = parsed.rootId;
   }
 
+  // Non-markdown files discovered via links (e.g. PDFs) are materialized as
+  // attachment nodes here. Unlinked attachments never appear in the graph.
+  const attachmentNodes = new Map();
+
   // Resolve explicit links, attributed to the deepest heading owning the link's line.
   for (const info of fileInfos) {
     const { content, lineOwners, rel } = info;
     const lines = content.split(/\r?\n/);
     const wikiRe = /\[\[([^\]]+)\]\]/g;
     const mdLinkRe = /\[([^\]]+)\]\(([^)]+)\)/g;
+
+    const resolveTarget = (targetFile, targetHeading) => {
+      const att = targetFile ? resolveAttachment(targetFile, info.fullPath, root, attachmentNodes) : null;
+      if (att) return att;
+      return resolveHeadingLink(targetFile, targetHeading, info.fullPath, fileMap, root, headingIndex, rel);
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -103,7 +118,7 @@ async function buildGraph() {
       while ((m = wikiRe.exec(line)) !== null) {
         const inner = m[1].split('|')[0].trim();
         const [targetFile, targetHeading] = splitHash(inner);
-        const resolved = resolveHeadingLink(targetFile, targetHeading, info.fullPath, fileMap, root, headingIndex, rel);
+        const resolved = resolveTarget(targetFile, targetHeading);
         if (resolved && resolved !== ownerId) links.push({ source: ownerId, target: resolved, kind: 'link' });
       }
 
@@ -112,11 +127,13 @@ async function buildGraph() {
         const href = m[2].trim();
         if (!href || href.startsWith('http') || href.startsWith('mailto')) continue;
         const [targetFile, targetHeading] = splitHash(href);
-        const resolved = resolveHeadingLink(targetFile, targetHeading, info.fullPath, fileMap, root, headingIndex, rel);
+        const resolved = resolveTarget(targetFile, targetHeading);
         if (resolved && resolved !== ownerId) links.push({ source: ownerId, target: resolved, kind: 'link' });
       }
     }
   }
+
+  nodes.push(...attachmentNodes.values());
 
   const seen = new Set();
   const uniqueLinks = links.filter(l => {
@@ -271,6 +288,33 @@ function parseFileNodes(content, rel, name, fullPath) {
   }
 
   return { nodes, containmentLinks, rootId, byHeading, lineOwners };
+}
+
+const ATTACHMENT_EXTS = new Set(['.pdf']);
+
+function resolveAttachment(targetFile, fromFile, root, attachmentNodes) {
+  if (!targetFile) return null;
+  const cleaned = targetFile.split('?')[0];
+  const ext = path.extname(cleaned).toLowerCase();
+  if (!ATTACHMENT_EXTS.has(ext)) return null;
+  const abs = path.isAbsolute(cleaned)
+    ? cleaned
+    : path.resolve(path.dirname(fromFile), cleaned);
+  if (!fs.existsSync(abs)) return null;
+  const rel = path.relative(root, abs).replace(/\\/g, '/');
+  if (!attachmentNodes.has(rel)) {
+    attachmentNodes.set(rel, {
+      id: rel,
+      label: path.basename(abs, ext),
+      level: 1,
+      kind: 'attachment',
+      ext,
+      path: abs,
+      file: rel,
+      line: 0,
+    });
+  }
+  return rel;
 }
 
 function splitHash(href) {

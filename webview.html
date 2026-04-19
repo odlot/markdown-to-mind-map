@@ -53,11 +53,18 @@
     const fontSizeFor = lvl => ({ 1: 12, 2: 10, 3: 8 }[lvl] ?? 8);
     const labelDyFor = lvl => radiusFor(lvl) + 10;
 
+    // Rectangle size for attachment nodes (e.g. PDFs). Half-diagonal is the
+    // conservative "radius" used for collision and arrow-retraction math.
+    const ATTACH_W = 16, ATTACH_H = 12;
+    const nodeSpanFor = d => d.kind === "attachment"
+      ? Math.hypot(ATTACH_W, ATTACH_H) / 2
+      : radiusFor(d.level);
+
     // Re-read colors when VS Code changes the theme.
     new MutationObserver(() => {
       C = readColors();
       // Repaint everything to the default (unhovered) state with new colors.
-      node.select("circle")
+      node.select(".shape")
         .attr("stroke", C.nodeStroke)
         .attr("fill", C.nodeStroke);
       node.select("text").attr("fill", C.labels);
@@ -113,7 +120,7 @@
         .distance(l => l.kind === "containment" ? 40 : 110)
         .strength(l => l.kind === "containment" ? 1.0 : 0.25))
       .force("charge", d3.forceManyBody().strength(-320))
-      .force("collide", d3.forceCollide().radius(d => radiusFor(d.level) + 8).iterations(2))
+      .force("collide", d3.forceCollide().radius(d => nodeSpanFor(d) + 8).iterations(2))
       .force("x", d3.forceX().strength(0.03))
       .force("y", d3.forceY().strength(0.03));
 
@@ -150,16 +157,32 @@
       .data(nodes)
       .join("g");
 
-    node.append("circle")
+    // Heading nodes are circles; attachment nodes (PDFs, etc.) are rectangles.
+    // Both elements get class "shape" so hover code can target them uniformly.
+    node.filter(d => d.kind !== "attachment")
+      .append("circle")
+      .attr("class", "shape")
       .attr("r", d => radiusFor(d.level))
       .attr("fill", C.nodeStroke)
       .attr("fill-opacity", d => fillOpacityFor(d.level))
       .attr("stroke", C.nodeStroke)
       .attr("stroke-width", 1.5);
 
+    node.filter(d => d.kind === "attachment")
+      .append("rect")
+      .attr("class", "shape")
+      .attr("x", -ATTACH_W / 2)
+      .attr("y", -ATTACH_H / 2)
+      .attr("width", ATTACH_W)
+      .attr("height", ATTACH_H)
+      .attr("fill", C.nodeStroke)
+      .attr("fill-opacity", 1.0)
+      .attr("stroke", C.nodeStroke)
+      .attr("stroke-width", 1.5);
+
     node.append("text")
       .text(d => d.label)
-      .attr("dy", d => labelDyFor(d.level))
+      .attr("dy", d => d.kind === "attachment" ? ATTACH_H / 2 + 10 : labelDyFor(d.level))
       .attr("text-anchor", "middle")
       .attr("fill", C.labels)
       .attr("font-size", d => fontSizeFor(d.level))
@@ -167,7 +190,12 @@
 
     const vscode = acquireVsCodeApi();
     node.on("click", (event, d) => {
-      vscode.postMessage({ command: "openFile", path: d.path, line: d.line ?? 0 });
+      vscode.postMessage({
+        command: "openFile",
+        path: d.path,
+        line: d.line ?? 0,
+        kind: d.kind,
+      });
     });
 
     // Show label and highlight connected nodes/links on hover. Hovering also
@@ -184,7 +212,7 @@
       forcedIds = connected;
       updateLabelVisibility();
 
-      node.select("circle")
+      node.select(".shape")
         .attr("stroke", n => connected.has(n.id) ? C.highlight : C.dimmed)
         .attr("fill", n => connected.has(n.id) ? C.highlight : C.dimmed);
       node.select("text")
@@ -202,7 +230,7 @@
     }).on("mouseleave", () => {
       forcedIds = new Set();
       updateLabelVisibility();
-      node.select("circle")
+      node.select(".shape")
         .attr("stroke", C.nodeStroke)
         .attr("fill", C.nodeStroke);
       node.select("text").attr("fill", C.labels);
@@ -232,14 +260,14 @@
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const dist = Math.hypot(dx, dy) || 1;
-          return d.target.x - (dx / dist) * (radiusFor(d.target.level) + ARROW_GAP);
+          return d.target.x - (dx / dist) * (nodeSpanFor(d.target) + ARROW_GAP);
         })
         .attr("y2", d => {
           if (d.kind !== "link") return d.target.y;
           const dx = d.target.x - d.source.x;
           const dy = d.target.y - d.source.y;
           const dist = Math.hypot(dx, dy) || 1;
-          return d.target.y - (dy / dist) * (radiusFor(d.target.level) + ARROW_GAP);
+          return d.target.y - (dy / dist) * (nodeSpanFor(d.target) + ARROW_GAP);
         });
 
       node

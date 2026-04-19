@@ -71,6 +71,17 @@ const expectations = {
       { kind: 'link', source: 'InformationD.md::InformationD>SubheadingB of InformationD', target: 'InformationA.md::InformationA>SubheadingA of InformationA' },
     ],
   },
+  'with-pdf': {
+    // Linked PDFs appear as attachment nodes (rendered as rectangles in the
+    // webview). Multiple links to the same PDF dedup to a single edge.
+    nodes: [
+      { id: 'doc.md::__root__', label: 'Doc', level: 1 },
+      { id: 'sample.pdf', label: 'sample', level: 1, kind: 'attachment' },
+    ],
+    links: [
+      { kind: 'link', source: 'doc.md::__root__', target: 'sample.pdf' },
+    ],
+  },
   cycles: {
     nodes: [
       { id: 'alpha.md::__root__', label: 'Alpha', level: 1 },
@@ -156,6 +167,7 @@ async function runFixture(name) {
     else {
       if (got.label !== e.label) failures.push(`node ${e.id}: label "${got.label}" != "${e.label}"`);
       if (got.level !== e.level) failures.push(`node ${e.id}: level ${got.level} != ${e.level}`);
+      if (e.kind && got.kind !== e.kind) failures.push(`node ${e.id}: kind "${got.kind}" != "${e.kind}"`);
     }
   }
   // Extra nodes (ids not in expected) are a failure.
