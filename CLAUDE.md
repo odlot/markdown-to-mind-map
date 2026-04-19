@@ -24,6 +24,16 @@ Always use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/
 `refactor`, `test`, `chore`. Describe user-visible behavior in the body, not
 the diff.
 
+## Changelog
+
+Every `feat:`, `fix:`, or breaking change must append an entry under
+`## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog sections: `Added`,
+`Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`) as part of the same
+commit. `chore:`, `test:`, `refactor:`, and `docs:` that don't alter
+user-visible behavior can skip it. On release, rename `[Unreleased]` to the
+new version with a date, add a fresh empty `[Unreleased]` block, and update
+the compare/tag links at the bottom.
+
 ## Architecture notes
 
 Node IDs use the breadcrumb format `<relpath>::<H1>>.<H2>>.<H3>`, with `::__root__` for the file root. The root's label is the first `#` heading if present, else the filename. Links in `buildGraph`'s output carry `kind: 'containment' | 'link'` — the webview uses this to style edges (dashed vs solid) and tune force distances.
